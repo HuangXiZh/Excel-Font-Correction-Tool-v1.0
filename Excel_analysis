@@ -1,0 +1,70 @@
+from zipfile import ZipFile
+from pathlib import Path
+from tkinter import Tk, filedialog
+import os
+
+Tk().withdraw()
+
+file = filedialog.askopenfilename(
+    title="選擇 Excel",
+    filetypes=[("Excel", "*.xlsx *.xlsm")]
+)
+
+if not file:
+    raise SystemExit
+
+print(f"\n檔案：{Path(file).name}")
+print(f"檔案大小：{os.path.getsize(file)/1024/1024:.2f} MB\n")
+
+with ZipFile(file) as z:
+
+    infos = sorted(z.infolist(), key=lambda x: x.file_size, reverse=True)
+
+    print("="*70)
+    print(f"{'內部檔案':45}{'大小(MB)':>10}")
+    print("="*70)
+
+    total = 0
+
+    for i in infos:
+        size = i.file_size/1024/1024
+        total += size
+
+        if size >= 0.01:      # 超過10KB才顯示
+            print(f"{i.filename:45}{size:10.2f}")
+
+    print("="*70)
+    print(f"ZIP內未壓縮總大小：{total:.2f} MB\n")
+
+    print("======== 分類統計 ========")
+
+    def folder_size(prefix):
+        return sum(
+            x.file_size
+            for x in infos
+            if x.filename.startswith(prefix)
+        )/1024/1024
+
+    items = {
+        "工作表 XML": folder_size("xl/worksheets/"),
+        "圖片(media)": folder_size("xl/media/"),
+        "Drawing": folder_size("xl/drawings/"),
+        "Theme": folder_size("xl/theme/"),
+        "Pivot": folder_size("xl/pivot"),
+    }
+
+    for k,v in items.items():
+        print(f"{k:20}{v:8.2f} MB")
+
+    for special in [
+        "xl/styles.xml",
+        "xl/sharedStrings.xml",
+        "xl/workbook.xml",
+        "xl/calcChain.xml"
+    ]:
+
+        try:
+            s = z.getinfo(special).file_size/1024/1024
+            print(f"{Path(special).name:20}{s:8.2f} MB")
+        except:
+            pass
