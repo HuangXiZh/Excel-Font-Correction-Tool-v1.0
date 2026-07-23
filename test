@@ -1,0 +1,144 @@
+z.read("xl/_rels/workbook.xml.rels")
+    )
+
+    rmap={
+        x.attrib["Id"]:x.attrib["Target"]
+        for x in rel
+    }
+
+
+    wb=ET.fromstring(
+        z.read("xl/workbook.xml")
+    )
+
+
+    for s in wb.find("a:sheets",ns):
+
+        name=s.attrib["name"]
+
+        rid=s.attrib[
+        "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+        ]
+
+        sheet="xl/"+rmap[rid]
+
+
+        total=0
+
+
+        # sheet本體
+        if sheet in files:
+            total+=z.getinfo(sheet).file_size
+
+
+        # sheet關聯檔
+        relfile=sheet.replace(
+            "worksheets/",
+            "worksheets/_rels/"
+        )+".rels"
+
+
+        if relfile in files:
+
+            rr=ET.fromstring(
+                z.read(relfile)
+            )
+
+            for x in rr:
+
+                target=x.attrib["Target"]
+
+                path=os.path.normpath(
+                    os.path.dirname(relfile)
+                    +"/../"
+                    +target
+                )
+
+                path=path.replace("\\","/")
+
+                if path in files:
+                    total+=z.getinfo(path).file_size
+
+
+        data.append(
+            [name,total/1024/1024]
+        )
+
+
+
+data.sort(
+    key=lambda x:x[1],
+    reverse=True
+)
+
+
+print("\nExcel:",os.path.basename(f))
+print(f"File Size: {size:.2f} MB\n")
+
+
+print(
+f"{'No':<4}{'Sheet':<25}{'MB':<10}{'Total'}"
+)
+
+print("-"*55)
+
+
+acc=0
+
+for i,(name,mb) in enumerate(data,1):
+
+    acc+=mb
+
+    print(
+        f"{i:<4}{name:<25}{mb:<10.2f}{acc:.2f}"
+    )
+
+
+
+print("\nSheet Total:",
+      round(acc,2),
+      "MB")
+
+
+print("File Total :",
+      round(size,2),
+      "MB")
+
+
+print("Other      :",
+      round(size-acc,2),
+      "MB")
+
+
+print("\nCoverage:",
+      round(acc/size*100,1),
+      "%")
+
+
+
+# 共用資源
+
+print("\nShared Resource:")
+
+
+with zipfile.ZipFile(f) as z:
+
+    for x in [
+        "xl/styles.xml",
+        "xl/sharedStrings.xml",
+        "xl/theme/theme1.xml"
+    ]:
+
+        if x in z.namelist():
+
+            print(
+                x,
+                round(
+                    z.getinfo(x).file_size/1024/1024,
+                    2
+                ),
+                "MB"
+            )
+
+
+print("\n完成")
