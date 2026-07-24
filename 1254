@@ -1,0 +1,102 @@
+import os
+import tempfile
+import subprocess
+import tkinter as tk
+from tkinter import filedialog
+
+
+root = tk.Tk()
+root.withdraw()
+
+excel = filedialog.askopenfilename(
+    filetypes=[("Excel", "*.xlsx")]
+)
+
+if not excel:
+    exit()
+
+
+vbs = os.path.join(
+    tempfile.gettempdir(),
+    "sheet_size.vbs"
+)
+
+result = os.path.join(
+    tempfile.gettempdir(),
+    "result.txt"
+)
+
+
+code = r'''
+Set xl=CreateObject("Excel.Application")
+xl.Visible=False
+xl.DisplayAlerts=False
+
+Set wb=xl.Workbooks.Open(WScript.Arguments(0))
+
+Set fso=CreateObject("Scripting.FileSystemObject")
+Set out=fso.CreateTextFile(WScript.Arguments(1),True)
+
+
+For Each ws In wb.Worksheets
+
+    ws.Copy
+
+    Set nw=xl.ActiveWorkbook
+
+    p=fso.GetTempName & ".xlsx"
+
+    nw.SaveAs p,51
+
+    nw.Close False
+
+
+    size=fso.GetFile(p).Size/1024/1024
+
+    out.WriteLine ws.Name & "," & size
+
+    fso.DeleteFile p
+
+Next
+
+
+wb.Close False
+xl.Quit
+out.Close
+'''
+
+
+with open(vbs,"w",encoding="utf-8") as f:
+    f.write(code)
+
+
+subprocess.run(
+    [
+        "cscript",
+        "//nologo",
+        vbs,
+        excel,
+        result
+    ]
+)
+
+
+if os.path.exists(result):
+
+    print("\nSheet Size\n")
+
+    with open(result,"r",encoding="utf-8") as f:
+
+        for x in f:
+
+            name,size=x.strip().split(",")
+
+            print(
+                f"{name:<30}{float(size):.2f} MB"
+            )
+
+    os.remove(result)
+
+else:
+
+    print("分析失敗")
