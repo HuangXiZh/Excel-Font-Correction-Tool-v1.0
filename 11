@@ -1,0 +1,183 @@
+import os
+import tempfile
+import subprocess
+import tkinter as tk
+from tkinter import filedialog
+
+
+root = tk.Tk()
+root.withdraw()
+
+excel = filedialog.askopenfilename(
+    title="選擇 Excel",
+    filetypes=[("Excel", "*.xlsx")]
+)
+
+if not excel:
+    exit()
+
+
+tmp_report = os.path.join(
+    tempfile.gettempdir(),
+    "sheet_size_result.txt"
+)
+
+report = os.path.join(
+    os.path.dirname(excel),
+    "Sheet_Real_Size_Report.txt"
+)
+
+
+vbs = r'''
+Set xl=CreateObject("Excel.Application")
+xl.Visible=False
+xl.DisplayAlerts=False
+
+Set wb=xl.Workbooks.Open(WScript.Arguments(0),False,True)
+
+Set fso=CreateObject("Scripting.FileSystemObject")
+Set out=fso.CreateTextFile(WScript.Arguments(1),True)
+
+For Each ws In wb.Worksheets
+
+    ws.Copy
+
+    Set nw=xl.ActiveWorkbook
+
+    p=fso.BuildPath(
+        fso.GetParentFolderName(WScript.Arguments(0)),
+        fso.GetTempName & ".xlsx"
+    )
+
+    nw.SaveAs p,51
+    nw.Close False
+
+    s=fso.GetFile(p).Size/1024/1024
+
+    out.WriteLine ws.Name & "|" & s
+
+    fso.DeleteFile p,True
+
+Next
+
+
+wb.Close False
+xl.Quit
+out.Close
+'''
+
+
+vbs_file = os.path.join(
+    tempfile.gettempdir(),
+    "sheet_size.vbs"
+)
+
+
+with open(vbs_file,"w",encoding="utf-8") as f:
+    f.write(vbs)
+
+
+print("分析中...")
+
+
+subprocess.run(
+    [
+        "cscript",
+        "//nologo",
+        vbs_file,
+        excel,
+        tmp_report
+    ],
+    shell=True
+)
+
+
+
+# =====================
+# Python整理結果
+# =====================
+
+data=[]
+
+with open(tmp_report,"r",encoding="utf-8") as f:
+
+    for line in f:
+
+        name,size=line.strip().split("|")
+
+        data.append(
+            [
+                name,
+                float(size)
+            ]
+        )
+
+
+data.sort(
+    key=lambda x:x[1],
+    reverse=True
+)
+
+
+original=os.path.getsize(excel)/1024/1024
+
+
+with open(report,"w",encoding="utf-8") as f:
+
+    f.write("Excel Sheet Real Size\n\n")
+
+    f.write(
+        f"File: {os.path.basename(excel)}\n"
+    )
+
+    f.write(
+        f"Original Size: {original:.2f} MB\n\n"
+    )
+
+
+    f.write(
+        f"{'No':<5}"
+        f"{'Sheet':<25}"
+        f"{'Size':<12}"
+        f"{'%':<8}"
+        f"{'Total'}\n"
+    )
+
+    f.write("-"*65+"\n")
+
+
+    total=0
+
+    for i,(name,size) in enumerate(data,1):
+
+        total+=size
+
+        f.write(
+            f"{i:<5}"
+            f"{name:<25}"
+            f"{size:<12.2f}"
+            f"{size/original*100:<8.1f}"
+            f"{total:.2f}\n"
+        )
+
+
+    f.write("\n")
+    f.write(
+        f"Sheet Total: {total:.2f} MB\n"
+    )
+
+    f.write(
+        f"Difference : {original-total:.2f} MB\n"
+    )
+
+    f.write(
+        f"Coverage   : {total/original*100:.1f}%\n"
+    )
+
+
+os.remove(tmp_report)
+
+print("完成")
+print(report)
+
+os.startfile(report)
