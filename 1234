@@ -1,0 +1,299 @@
+import os
+import tempfile
+import subprocess
+import tkinter as tk
+from tkinter import filedialog
+
+
+# 選擇 Excel
+root = tk.Tk()
+root.withdraw()
+
+excel = filedialog.askopenfilename(
+    title="選擇 Excel 檔案",
+    filetypes=[("Excel", "*.xlsx")]
+)
+
+if not excel:
+    exit()
+
+
+tmp_result = os.path.join(
+    tempfile.gettempdir(),
+    "sheet_size_result.txt"
+)
+
+report = os.path.join(
+    os.path.dirname(excel),
+    "Sheet_Real_Size_Report.txt"
+)
+
+
+# ======================
+# 建立 VBS
+# ======================
+
+vbs_code = r'''
+On Error Resume Next
+
+Set xl = CreateObject("Excel.Application")
+
+If Err.Number <> 0 Then
+    WScript.Quit
+End If
+
+
+xl.Visible = False
+xl.DisplayAlerts = False
+
+
+Set fso = CreateObject("Scripting.FileSystemObject")
+
+
+Set wb = xl.Workbooks.Open(WScript.Arguments(0), False, True)
+
+
+Set out = fso.CreateTextFile(WScript.Arguments(1), True)
+
+
+
+For Each ws In wb.Worksheets
+
+
+    ws.Copy
+
+
+    Set newwb = xl.ActiveWorkbook
+
+
+    tempFile = fso.BuildPath(
+        fso.GetParentFolderName(WScript.Arguments(0)),
+        fso.GetTempName & ".xlsx"
+    )
+
+
+    Err.Clear
+
+
+    newwb.SaveAs tempFile, 51
+
+
+    If Err.Number <> 0 Then
+
+        out.WriteLine "ERROR|" & ws.Name
+
+        Err.Clear
+
+    Else
+
+        newwb.Close False
+
+
+        size = fso.GetFile(tempFile).Size / 1024 / 1024
+
+
+        out.WriteLine "SIZE|" & ws.Name & "|" & size
+
+
+        fso.DeleteFile tempFile, True
+
+    End If
+
+
+Next
+
+
+
+wb.Close False
+
+xl.Quit
+
+
+out.Close
+'''
+
+
+vbs_file = os.path.join(
+    tempfile.gettempdir(),
+    "sheet_size_check.vbs"
+)
+
+
+with open(
+    vbs_file,
+    "w",
+    encoding="utf-8"
+) as f:
+    f.write(vbs_code)
+
+
+
+# ======================
+# 執行 VBS
+# ======================
+
+print("分析中...")
+print("檔案:", excel)
+
+
+subprocess.run(
+    [
+        "cscript",
+        "//nologo",
+        vbs_file,
+        excel,
+        tmp_result
+    ],
+    shell=True
+)
+
+
+
+# ======================
+# 檢查結果
+# ======================
+
+if not os.path.exists(tmp_result):
+
+    print("")
+    print("錯誤：Excel沒有產生分析結果")
+    print("")
+    print("可能原因:")
+    print("1. Excel被其他程式鎖定")
+    print("2. 檔案權限不足")
+    print("3. Excel SaveAs失敗")
+
+    input("按Enter離開...")
+    exit()
+
+
+
+# ======================
+# 讀取結果
+# ======================
+
+data=[]
+
+
+with open(
+    tmp_result,
+    "r",
+    encoding="utf-8"
+) as f:
+
+    for line in f:
+
+        x=line.strip().split("|")
+
+
+        if x[0]=="SIZE":
+
+            data.append(
+                [
+                    x[1],
+                    float(x[2])
+                ]
+            )
+
+
+        elif x[0]=="ERROR":
+
+            print(
+                "失敗 Sheet:",
+                x[1]
+            )
+
+
+
+# 排序
+data.sort(
+    key=lambda x:x[1],
+    reverse=True
+)
+
+
+original = os.path.getsize(excel)/1024/1024
+
+
+
+# ======================
+# 輸出報告
+# ======================
+
+with open(
+    report,
+    "w",
+    encoding="utf-8"
+) as f:
+
+
+    f.write("Excel Sheet Real Size Report\n\n")
+
+
+    f.write(
+        f"File: {os.path.basename(excel)}\n"
+    )
+
+
+    f.write(
+        f"Original Size: {original:.2f} MB\n\n"
+    )
+
+
+    f.write(
+        f"{'No':<5}"
+        f"{'Sheet':<25}"
+        f"{'MB':<10}"
+        f"{'%':<8}"
+        f"{'Total'}\n"
+    )
+
+
+    f.write("-"*65+"\n")
+
+
+    total=0
+
+
+    for i,(name,mb) in enumerate(data,1):
+
+
+        total += mb
+
+
+        f.write(
+            f"{i:<5}"
+            f"{name:<25}"
+            f"{mb:<10.2f}"
+            f"{mb/original*100:<8.1f}"
+            f"{total:.2f}\n"
+        )
+
+
+
+    f.write("\n")
+
+    f.write(
+        f"Sheet Total : {total:.2f} MB\n"
+    )
+
+    f.write(
+        f"Difference  : {original-total:.2f} MB\n"
+    )
+
+    f.write(
+        f"Coverage    : {total/original*100:.1f}%\n"
+    )
+
+
+
+# 清理
+os.remove(tmp_result)
+
+
+print("")
+print("完成")
+print(report)
+
+
+os.startfile(report)
